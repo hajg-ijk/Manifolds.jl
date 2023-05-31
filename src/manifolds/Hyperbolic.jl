@@ -255,6 +255,17 @@ Return false. [`Hyperbolic`](@ref) is not a flat manifold.
 is_flat(M::Hyperbolic) = false
 
 @doc raw"""
+    local_metric(M::Hyperbolic{n}, p, ::DefaultOrthonormalBasis)
+
+return the local representation of the metric in a [`DefaultOrthonormalBasis`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/bases.html#ManifoldsBase.DefaultOrthonormalBasis), namely
+the diagonal matrix of size ``n×n`` with ones on the diagonal and negative one for the last element, since the metric is obtained
+from the embedding by restriction to the tangent space ``T_p\mathcal M`` at ``p``.
+"""
+function local_metric(::Hyperbolic{n}, p, B::DefaultOrthonormalBasis) where {n}
+    return Diagonal(SVector{n}([ones(eltype(p), n-1); eltype(p)(-1)]))
+end
+
+@doc raw"""
     log(M::Hyperbolic, p, q)
 
 Compute the logarithmic map on the [`Hyperbolic`](@ref) space $\mathcal H^n$, the tangent
