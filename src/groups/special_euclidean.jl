@@ -129,8 +129,7 @@ matrix part of `p`, `r` is the translation part of `fX` and `ω` is the rotation
 ``×`` is the cross product and ``⋅`` is the matrix product.
 """
 function adjoint_action(::SpecialEuclidean{3}, p, fX::TFVector{<:Any,VeeOrthogonalBasis{ℝ}})
-    t = p.parts[1]
-    R = p.parts[2]
+    t, R = submanifold_components(p)
     r = fX.data[SA[1, 2, 3]]
     ω = fX.data[SA[4, 5, 6]]
     Rω = R * ω
@@ -233,9 +232,7 @@ function check_vector(
     # SOn
     err3 = check_vector(submanifold(G, 2), p[1:n, 1:n], X[1:n, 1:n]; kwargs...)
     !isnothing(err3) && push!(errs, err3)
-    if length(errs) > 1
-        return CompositeManifoldError(errs)
-    end
+    (length(errs) > 1) && (return CompositeManifoldError(errs))
     return length(errs) == 0 ? nothing : first(errs)
 end
 
@@ -290,6 +287,17 @@ end
 function exp!(M::SpecialEuclideanManifold, q::AbstractMatrix, p, X)
     map(
         exp!,
+        M.manifolds,
+        submanifold_components(M, q),
+        submanifold_components(M, p),
+        submanifold_components(M, X),
+    )
+    @inbounds _padpoint!(M, q)
+    return q
+end
+function exp!(M::SpecialEuclideanManifold, q::AbstractMatrix, p, X, t::Number)
+    map(
+        (N, qc, pc, Xc) -> exp!(N, qc, pc, Xc, t),
         M.manifolds,
         submanifold_components(M, q),
         submanifold_components(M, p),
@@ -544,6 +552,7 @@ end
 
 """
     lie_bracket(G::SpecialEuclidean, X::ProductRepr, Y::ProductRepr)
+    lie_bracket(G::SpecialEuclidean, X::ArrayPartition, Y::ArrayPartition)
     lie_bracket(G::SpecialEuclidean, X::AbstractMatrix, Y::AbstractMatrix)
 
 Calculate the Lie bracket between elements `X` and `Y` of the special Euclidean Lie
@@ -555,6 +564,11 @@ function lie_bracket(G::SpecialEuclidean, X::ProductRepr, Y::ProductRepr)
     nX, hX = submanifold_components(G, X)
     nY, hY = submanifold_components(G, Y)
     return ProductRepr(hX * nY - hY * nX, lie_bracket(G.manifold.manifolds[2], hX, hY))
+end
+function lie_bracket(G::SpecialEuclidean, X::ArrayPartition, Y::ArrayPartition)
+    nX, hX = submanifold_components(G, X)
+    nY, hY = submanifold_components(G, Y)
+    return ArrayPartition(hX * nY - hY * nX, lie_bracket(G.manifold.manifolds[2], hX, hY))
 end
 function lie_bracket(::SpecialEuclidean, X::AbstractMatrix, Y::AbstractMatrix)
     return X * Y - Y * X
@@ -659,7 +673,7 @@ This is performed by extracting the rotation and translation part as in [`affine
 function project(M::SpecialEuclideanInGeneralLinear, p)
     G = M.manifold
     np, hp = submanifold_components(G, p)
-    return ProductRepr(np, hp)
+    return ArrayPartition(np, hp)
 end
 """
     project(M::SpecialEuclideanInGeneralLinear, p, X)
@@ -672,7 +686,7 @@ function project(M::SpecialEuclideanInGeneralLinear, p, X)
     G = M.manifold
     np, hp = submanifold_components(G, p)
     nX, hX = submanifold_components(G, X)
-    return ProductRepr(hp * nX, hX)
+    return ArrayPartition(hp * nX, hX)
 end
 
 function project!(M::SpecialEuclideanInGeneralLinear, q, p)

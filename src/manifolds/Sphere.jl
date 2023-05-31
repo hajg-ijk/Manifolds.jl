@@ -139,7 +139,14 @@ both `p` and `q` lie on.
 d_{𝕊}(p,q) = \arccos(\Re(⟨p,q⟩)).
 ````
 """
-distance(::AbstractSphere, p, q) = acos(clamp(real(dot(p, q)), -1, 1))
+function distance(::AbstractSphere, p, q)
+    cosθ = real(dot(p, q))
+    T = float(real(Base.promote_eltype(p, q)))
+    # abs and relative error of acos is less than sqrt(eps(T))
+    -1 < cosθ < 1 - sqrt(eps(T)) / 8 && return acos(cosθ)
+    # improved accuracy for q close to p or -p
+    return 2 * abs(atan(norm(p - q), norm(p + q)))
+end
 
 embed(::AbstractSphere, p) = copy(p)
 embed(::AbstractSphere, p, X) = copy(X)
@@ -161,6 +168,11 @@ exp(::AbstractSphere, ::Any...)
 function exp!(M::AbstractSphere, q, p, X)
     θ = norm(M, p, X)
     q .= cos(θ) .* p .+ usinc(θ) .* X
+    return q
+end
+function exp!(M::AbstractSphere, q, p, X, t::Number)
+    θ = abs(t) * norm(M, p, X)
+    q .= cos(θ) .* p .+ usinc(θ) .* t .* X
     return q
 end
 
@@ -394,15 +406,6 @@ project(::AbstractSphere, ::Any, ::Any)
 
 project!(::AbstractSphere, Y, p, X) = (Y .= X .- real(dot(p, X)) .* p)
 
-function Random.rand!(M::AbstractSphere, pX; vector_at=nothing, σ=one(eltype(pX)))
-    if vector_at === nothing
-        project!(M, pX, randn(representation_size(M)))
-    else
-        n = σ * randn(size(pX)) # Gaussian in embedding
-        project!(M, pX, vector_at, n) #project to TpM (keeps Gaussianness)
-    end
-    return pX
-end
 function Random.rand!(
     rng::AbstractRNG,
     M::AbstractSphere,
@@ -411,9 +414,9 @@ function Random.rand!(
     σ=one(eltype(pX)),
 )
     if vector_at === nothing
-        project!(M, pX, randn(rng, representation_size(M)))
+        project!(M, pX, randn(rng, eltype(pX), representation_size(M)))
     else
-        n = σ * randn(rng, size(pX)) # Gaussian in embedding
+        n = σ * randn(rng, eltype(pX), size(pX)) # Gaussian in embedding
         project!(M, pX, vector_at, n) #project to TpM (keeps Gaussianness)
     end
     return pX
@@ -439,8 +442,8 @@ Compute the retraction that is based on projection, i.e.
 """
 retract(::AbstractSphere, ::Any, ::Any, ::ProjectionRetraction)
 
-function retract_project!(M::AbstractSphere, q, p, X)
-    q .= p .+ X
+function retract_project!(M::AbstractSphere, q, p, X, t::Number)
+    q .= p .+ t .* X
     return project!(M, q, q)
 end
 

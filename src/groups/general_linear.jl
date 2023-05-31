@@ -84,6 +84,10 @@ function exp(M::GeneralLinear, p, X)
     q = similar(p)
     return exp!(M, q, p, X)
 end
+function exp(M::GeneralLinear, p, X, t::Number)
+    q = similar(p)
+    return exp!(M, q, p, t * X)
+end
 
 function exp!(G::GeneralLinear, q, p, X)
     expX = exp(X)
@@ -93,6 +97,9 @@ function exp!(G::GeneralLinear, q, p, X)
     compose!(G, q, expX', exp(X - X'))
     compose!(G, q, p, q)
     return q
+end
+function exp!(G::GeneralLinear, q, p, X, t::Number)
+    return exp!(G, q, p, t * X)
 end
 function exp!(::GeneralLinear{1}, q, p, X)
     p1 = p isa Identity ? p : p[1]
@@ -238,6 +245,26 @@ project(::GeneralLinear, p, X) = X
 
 project!(::GeneralLinear, q, p) = copyto!(q, p)
 project!(::GeneralLinear, Y, p, X) = copyto!(Y, X)
+
+@doc raw"""
+    Random.rand(G::GeneralLinear; vector_at=nothing, kwargs...)
+
+If `vector_at` is `nothing`, return a random point on the [`GeneralLinear`](@ref) group `G`
+by using `rand` in the embedding.
+
+If `vector_at` is not `nothing`, return a random tangent vector from the tangent space of
+the point `vector_at` on the [`GeneralLinear`](@ref) by using by using `rand` in the embedding.
+"""
+rand(G::GeneralLinear; kwargs...)
+
+function Random.rand!(G::GeneralLinear, pX; kwargs...)
+    rand!(get_embedding(G), pX; kwargs...)
+    return pX
+end
+function Random.rand!(rng::AbstractRNG, G::GeneralLinear, pX; kwargs...)
+    rand!(rng, get_embedding(G), pX; kwargs...)
+    return pX
+end
 
 Base.show(io::IO, ::GeneralLinear{n,𝔽}) where {n,𝔽} = print(io, "GeneralLinear($n, $𝔽)")
 

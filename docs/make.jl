@@ -1,4 +1,4 @@
-using Plots, RecipesBase, Manifolds, ManifoldsBase, Documenter, PyPlot
+using Plots, RecipesBase, Manifolds, ManifoldsBase, Documenter, PythonPlot
 using PlutoStaticHTML
 # required for loading methods that handle differential equation solving
 using OrdinaryDiffEq, BoundaryValueDiffEq, DiffEqCallbacks
@@ -70,7 +70,25 @@ end
 makedocs(
     # for development, we disable prettyurls
     format=Documenter.HTML(prettyurls=false, assets=["assets/favicon.ico"]),
-    modules=[Manifolds],
+    modules=[
+        Manifolds,
+        isdefined(Base, :get_extension) ?
+        Base.get_extension(Manifolds, :ManifoldsBoundaryValueDiffEqExt) :
+        Manifolds.ManifoldsBoundaryValueDiffEqExt,
+        isdefined(Base, :get_extension) ?
+        Base.get_extension(Manifolds, :ManifoldsNLsolveExt) : Manifolds.ManifoldsNLsolveExt,
+        isdefined(Base, :get_extension) ?
+        Base.get_extension(Manifolds, :ManifoldsOrdinaryDiffEqDiffEqCallbacksExt) :
+        Manifolds.ManifoldsOrdinaryDiffEqDiffEqCallbacksExt,
+        isdefined(Base, :get_extension) ?
+        Base.get_extension(Manifolds, :ManifoldsOrdinaryDiffEqExt) :
+        Manifolds.ManifoldsOrdinaryDiffEqExt,
+        isdefined(Base, :get_extension) ?
+        Base.get_extension(Manifolds, :ManifoldsRecipesBaseExt) :
+        Manifolds.ManifoldsRecipesBaseExt,
+        isdefined(Base, :get_extension) ? Base.get_extension(Manifolds, :ManifoldsTestExt) :
+        Manifolds.ManifoldsTestExt,
+    ],
     authors="Seth Axen, Mateusz Baran, Ronny Bergmann, and contributors.",
     sitename="Manifolds.jl",
     pages=[
@@ -85,6 +103,7 @@ makedocs(
                 "Essential manifold" => "manifolds/essentialmanifold.md",
                 "Euclidean" => "manifolds/euclidean.md",
                 "Fixed-rank matrices" => "manifolds/fixedrankmatrices.md",
+                "Flag" => "manifolds/flag.md",
                 "Generalized Stiefel" => "manifolds/generalizedstiefel.md",
                 "Generalized Grassmann" => "manifolds/generalizedgrassmann.md",
                 "Grassmann" => "manifolds/grassmann.md",

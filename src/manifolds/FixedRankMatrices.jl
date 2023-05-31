@@ -291,24 +291,26 @@ function Base.copyto!(X::UMVTVector, Y::UMVTVector)
 end
 
 """
-    default_inverse_retraction_method(M::Stiefel)
+    default_inverse_retraction_method(M::FixedRankMatrices)
 
-Return [`PolarInverseRetraction`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/retractions.html#ManifoldsBase.PolarInverseRetraction) as the default inverse retraction for the
-[`FixedRankMatrices`](@ref) manifold.
+Return [`PolarInverseRetraction`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/retractions.html#ManifoldsBase.PolarInverseRetraction)
+as the default inverse retraction for the [`FixedRankMatrices`](@ref) manifold.
 """
 default_inverse_retraction_method(::FixedRankMatrices) = PolarInverseRetraction()
 
 """
     default_retraction_method(M::FixedRankMatrices)
 
-Return [`PolarRetraction`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/retractions.html#ManifoldsBase.PolarRetraction) as the default retraction for the [`FixedRankMatrices`](@ref) manifold.
+Return [`PolarRetraction`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/retractions.html#ManifoldsBase.PolarRetraction)
+as the default retraction for the [`FixedRankMatrices`](@ref) manifold.
 """
 default_retraction_method(::FixedRankMatrices) = PolarRetraction()
 
 """
     default_vector_transport_method(M::FixedRankMatrices)
 
-Return the [`ProjectionTransport`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/vector_transports.html#ManifoldsBase.ProjectionTransport) as the default vector transport method for the [`FixedRankMatrices`](@ref) manifold.
+Return the [`ProjectionTransport`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/vector_transports.html#ManifoldsBase.ProjectionTransport)
+as the default vector transport method for the [`FixedRankMatrices`](@ref) manifold.
 """
 default_vector_transport_method(::FixedRankMatrices) = ProjectionTransport()
 
@@ -360,10 +362,10 @@ function inner(::FixedRankMatrices, x::SVDMPoint, v::UMVTVector, w::UMVTVector)
     return dot(v.U, w.U) + dot(v.M, w.M) + dot(v.Vt, w.Vt)
 end
 
-function Base.isapprox(::FixedRankMatrices, p::SVDMPoint, q::SVDMPoint; kwargs...)
+function _isapprox(::FixedRankMatrices, p::SVDMPoint, q::SVDMPoint; kwargs...)
     return isapprox(p.U * Diagonal(p.S) * p.Vt, q.U * Diagonal(q.S) * q.Vt; kwargs...)
 end
-function Base.isapprox(
+function _isapprox(
     ::FixedRankMatrices,
     p::SVDMPoint,
     X::UMVTVector,
@@ -442,26 +444,8 @@ and the singular values are sampled uniformly at random.
 If `vector_at` is not `nothing`, generate a random tangent vector in the tangent space of
 the point `vector_at` on the `FixedRankMatrices` manifold `M`.
 """
-function Random.rand(
-    M::FixedRankMatrices{m,n,k};
-    vector_at=nothing,
-    kwargs...,
-) where {m,n,k}
-    if vector_at === nothing
-        p = SVDMPoint(
-            Matrix{Float64}(undef, m, k),
-            Vector{Float64}(undef, k),
-            Matrix{Float64}(undef, k, n),
-        )
-        return rand!(M, p; kwargs...)
-    else
-        X = UMVTVector(
-            Matrix{Float64}(undef, m, k),
-            Matrix{Float64}(undef, k, k),
-            Matrix{Float64}(undef, k, n),
-        )
-        return rand!(M, X; vector_at, kwargs...)
-    end
+function Random.rand(M::FixedRankMatrices; vector_at=nothing, kwargs...)
+    return rand(Random.default_rng(), M; vector_at=vector_at, kwargs...)
 end
 function Random.rand(
     rng::AbstractRNG,
@@ -486,32 +470,6 @@ function Random.rand(
     end
 end
 
-function Random.rand!(
-    M::FixedRankMatrices{m,n,k},
-    pX;
-    vector_at=nothing,
-    kwargs...,
-) where {m,n,k}
-    if vector_at === nothing
-        U = rand(Stiefel(m, k); kwargs...)
-        S = sort(rand(k); rev=true)
-        V = rand(Stiefel(n, k); kwargs...)
-        copyto!(M, pX, SVDMPoint(U, S, V'))
-    else
-        Up = randn(m, k)
-        Vp = randn(n, k)
-        A = randn(k, k)
-        copyto!(
-            pX,
-            UMVTVector(
-                Up - vector_at.U * vector_at.U' * Up,
-                A,
-                Vp' - Vp' * vector_at.Vt' * vector_at.Vt,
-            ),
-        )
-    end
-    return pX
-end
 function Random.rand!(
     rng::AbstractRNG,
     ::FixedRankMatrices{m,n,k},
@@ -566,9 +524,11 @@ function retract_polar!(
     q::SVDMPoint,
     p::SVDMPoint,
     X::UMVTVector,
+    t::Number,
 ) where {m,n,k}
-    QU, RU = qr([p.U X.U])
-    QV, RV = qr([p.Vt' X.Vt'])
+    tX = t * X
+    QU, RU = qr([p.U tX.U])
+    QV, RV = qr([p.Vt' tX.Vt'])
 
     # Compute T = svd(RU * [diagm(p.S) + X.M I; I zeros(k, k)] * RV')
     @views begin
@@ -578,7 +538,7 @@ function retract_polar!(
         RV12 = RV[:, (k + 1):(2 * k)]
     end
     tmp = RU11 .* p.S' .+ RU12
-    mul!(tmp, RU11, X.M, true, true)
+    mul!(tmp, RU11, tX.M, true, true)
     tmp2 = tmp * RV11'
     mul!(tmp2, RU11, RV12', true, true)
     T = svd(tmp2)

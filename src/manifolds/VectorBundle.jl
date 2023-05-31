@@ -306,7 +306,7 @@ base_manifold(B::VectorSpaceAtPoint) = base_manifold(B.fiber)
 base_manifold(B::VectorBundle) = base_manifold(B.manifold)
 
 """
-    bundle_projection(B::VectorBundle, x::ProductRepr)
+    bundle_projection(B::VectorBundle, p::ArrayPartition)
 
 Projection of point `p` from the bundle `M` to the base manifold.
 Returns the point on the base manifold `B.manifold` at which the vector part
@@ -466,7 +466,7 @@ end
 function get_vector(M::VectorBundle, p, X, B::AbstractBasis)
     n = manifold_dimension(M.manifold)
     xp1 = submanifold_component(p, Val(1))
-    return ProductRepr(
+    return ArrayPartition(
         get_vector(M.manifold, xp1, X[1:n], B),
         get_vector(M.fiber, xp1, X[(n + 1):end], B),
     )
@@ -488,7 +488,7 @@ function get_vector(
 ) where {𝔽}
     n = manifold_dimension(M.manifold)
     xp1 = submanifold_component(p, Val(1))
-    return ProductRepr(
+    return ArrayPartition(
         get_vector(M.manifold, xp1, X[1:n], B.data.base_basis),
         get_vector(M.fiber, xp1, X[(n + 1):end], B.data.vec_basis),
     )
@@ -603,7 +603,7 @@ end
 @doc raw"""
     injectivity_radius(M::TangentSpaceAtPoint)
 
-Return the injectivity radius on the [`TangentSpaceAtPoint`](@ref) `M`, which is $∞$.
+Return the injectivity radius on the [`TangentSpaceAtPoint`](@ref Manifolds.TangentSpaceAtPoint) `M`, which is $∞$.
 """
 injectivity_radius(::TangentSpaceAtPoint) = Inf
 
@@ -706,27 +706,27 @@ function inverse_retract_product!(B::VectorBundle, X, p, q)
     return X
 end
 
-function Base.isapprox(B::VectorBundle, p, q; kwargs...)
+function _isapprox(B::VectorBundle, p, q; kwargs...)
     xp, Vp = submanifold_components(B.manifold, p)
     xq, Vq = submanifold_components(B.manifold, q)
     return isapprox(B.manifold, xp, xq; kwargs...) &&
            isapprox(VectorSpaceAtPoint(B.fiber, xp), Vp, Vq; kwargs...)
 end
-function Base.isapprox(B::VectorBundle, p, X, Y; kwargs...)
+function _isapprox(B::VectorBundle, p, X, Y; kwargs...)
     px, Vx = submanifold_components(B.manifold, p)
     VXM, VXF = submanifold_components(B.manifold, X)
     VYM, VYF = submanifold_components(B.manifold, Y)
     return isapprox(B.manifold, VXM, VYM; kwargs...) &&
            isapprox(VectorSpaceAtPoint(B.fiber, px), VXF, VYF; kwargs...)
 end
-function Base.isapprox(M::TangentSpaceAtPoint, X, Y; kwargs...)
+function _isapprox(M::TangentSpaceAtPoint, X, Y; kwargs...)
     return isapprox(M.fiber.manifold, M.point, X, Y; kwargs...)
 end
 
 """
     is_flat(::TangentSpaceAtPoint)
 
-Return true. [`TangentSpaceAtPoint`](@ref) is a flat manifold.
+Return true. [`TangentSpaceAtPoint`](@ref Manifolds.TangentSpaceAtPoint) is a flat manifold.
 """
 is_flat(::TangentSpaceAtPoint) = true
 """
@@ -863,18 +863,6 @@ function project!(B::VectorBundleFibers, Y, p, X)
     )
 end
 
-function Random.rand!(M::VectorBundle, pX; vector_at=nothing)
-    pXM, pXF = submanifold_components(M.manifold, pX)
-    if vector_at === nothing
-        rand!(M.manifold, pXM)
-        rand!(M.manifold, pXF; vector_at=pXM)
-    else
-        vector_atM, vector_atF = submanifold_components(M.manifold, vector_at)
-        rand!(M.manifold, pXM; vector_at=vector_atM)
-        rand!(M.manifold, pXF; vector_at=vector_atM)
-    end
-    return pX
-end
 function Random.rand!(rng::AbstractRNG, M::VectorBundle, pX; vector_at=nothing)
     pXM, pXF = submanifold_components(M.manifold, pX)
     if vector_at === nothing
@@ -887,38 +875,35 @@ function Random.rand!(rng::AbstractRNG, M::VectorBundle, pX; vector_at=nothing)
     end
     return pX
 end
-function Random.rand!(M::TangentSpaceAtPoint, X; vector_at=nothing)
-    rand!(M.fiber.manifold, X; vector_at=M.point)
-    return X
-end
 function Random.rand!(rng::AbstractRNG, M::TangentSpaceAtPoint, X; vector_at=nothing)
     rand!(rng, M.fiber.manifold, X; vector_at=M.point)
     return X
 end
 
-function _retract(M::VectorBundle, p, X, ::VectorBundleProductRetraction)
-    return retract_product(M, p, X)
+function _retract(M::VectorBundle, p, X, t::Number, ::VectorBundleProductRetraction)
+    return retract_product(M, p, X, t)
 end
 
-function _retract!(M::VectorBundle, q, p, X, ::VectorBundleProductRetraction)
-    return retract_product!(M, q, p, X)
+function _retract!(M::VectorBundle, q, p, X, t::Number, ::VectorBundleProductRetraction)
+    return retract_product!(M, q, p, X, t)
 end
 
 """
-    retract_product(M::VectorBundle, p, q)
+    retract_product(M::VectorBundle, p, q, t::Number)
 
 Compute the allocating variant of the [`VectorBundleProductRetraction`](@ref),
 which by default allocates and calls `retract_product!`.
 """
-function retract_product(M::VectorBundle, p, X)
+function retract_product(M::VectorBundle, p, X, t::Number)
     q = allocate_result(M, retract, p, X)
-    return retract_product!(M, q, p, X)
+    return retract_product!(M, q, p, X, t)
 end
 
-function retract_product!(B::VectorBundle, q, p, X)
+function retract_product!(B::VectorBundle, q, p, X, t::Number)
+    tX = t * X
     xp, Xp = submanifold_components(B.manifold, p)
     xq, Xq = submanifold_components(B.manifold, q)
-    VXM, VXF = submanifold_components(B.manifold, X)
+    VXM, VXF = submanifold_components(B.manifold, tX)
     # this temporary avoids overwriting `p` when `q` and `p` occupy the same memory
     xqt = exp(B.manifold, xp, VXM)
     vector_transport_direction!(
@@ -933,29 +918,30 @@ function retract_product!(B::VectorBundle, q, p, X)
     return q
 end
 
-function _retract(M::AbstractManifold, p, q, m::SasakiRetraction)
-    return retract_sasaki(M, p, q, m)
+function _retract(M::AbstractManifold, p, X, t::Number, m::SasakiRetraction)
+    return retract_sasaki(M, p, X, t, m)
 end
 
-function _retract!(M::AbstractManifold, X, p, q, m::SasakiRetraction)
-    return retract_sasaki!(M, X, p, q, m)
+function _retract!(M::AbstractManifold, q, p, X, t::Number, m::SasakiRetraction)
+    return retract_sasaki!(M, q, p, X, t, m)
 end
 
 """
-    retract_sasaki(M::AbstractManifold, p, q, m::SasakiRetraction)
+    retract_sasaki(M::AbstractManifold, p, X, t::Number, m::SasakiRetraction)
 
 Compute the allocating variant of the [`SasakiRetraction`](@ref),
 which by default allocates and calls `retract_sasaki!`.
 """
-function retract_sasaki(M::AbstractManifold, p, X, m::SasakiRetraction)
+function retract_sasaki(M::AbstractManifold, p, X, t::Number, m::SasakiRetraction)
     q = allocate_result(M, retract, p, X)
-    return retract_sasaki!(M, q, p, X, m)
+    return retract_sasaki!(M, q, p, X, t, m)
 end
 
-function retract_sasaki!(B::TangentBundle, q, p, X, m::SasakiRetraction)
+function retract_sasaki!(B::TangentBundle, q, p, X, t::Number, m::SasakiRetraction)
+    tX = t * X
     xp, Xp = submanifold_components(B.manifold, p)
     xq, Xq = submanifold_components(B.manifold, q)
-    VXM, VXF = submanifold_components(B.manifold, X)
+    VXM, VXF = submanifold_components(B.manifold, tX)
     p_k = allocate(B.manifold, xp)
     copyto!(B.manifold, p_k, xp)
     X_k = allocate(B.manifold, Xp)
@@ -1084,7 +1070,7 @@ end
     return allocate_result(B.manifold, f, x...)
 end
 @inline function allocate_result(M::VectorBundle, f::TF) where {TF}
-    return ProductRepr(allocate_result(M.manifold, f), allocate_result(M.fiber, f))
+    return ArrayPartition(allocate_result(M.manifold, f), allocate_result(M.fiber, f))
 end
 
 """
@@ -1137,7 +1123,7 @@ function _vector_transport_direction(
     px, pVx = submanifold_components(M.manifold, p)
     VXM, VXF = submanifold_components(M.manifold, X)
     dx, dVx = submanifold_components(M.manifold, d)
-    return ProductRepr(
+    return ArrayPartition(
         vector_transport_direction(M.manifold, px, VXM, dx, m.method_point),
         vector_transport_direction(M.manifold, px, VXF, dx, m.method_vector),
     )
@@ -1188,7 +1174,7 @@ function _vector_transport_to(
     px, pVx = submanifold_components(M.manifold, p)
     VXM, VXF = submanifold_components(M.manifold, X)
     qx, qVx = submanifold_components(M.manifold, q)
-    return ProductRepr(
+    return ArrayPartition(
         vector_transport_to(M.manifold, px, VXM, qx, m.method_point),
         vector_transport_to(M.manifold, px, VXF, qx, m.method_vector),
     )

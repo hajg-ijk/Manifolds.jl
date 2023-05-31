@@ -10,7 +10,7 @@ translation and scaling and rotation of all points [^Kendall1984][^Kendall1989].
 
 This manifold possesses the [`IsQuotientManifold`](@ref) trait.
 
-# Constructor 
+# Constructor
 
     KendallsShapeSpace(n::Int, k::Int)
 
@@ -55,8 +55,8 @@ end
 """
     exp(M::KendallsShapeSpace, p, X)
 
-Compute the exponential map on [`KendallsShapeSpace`](@ref) `M`. See [^Guigui2021] for discussion
-about its computation.
+Compute the exponential map on [`KendallsShapeSpace`](@ref) `M`.
+See [^Guigui2021] for discussion about its computation.
 
 [^Guigui2021]:
     > N. Guigui, E. Maignant, A. Trouvé, and X. Pennec, “Parallel Transport on Kendall Shape
@@ -66,7 +66,8 @@ about its computation.
 exp(M::KendallsShapeSpace, p, X)
 
 function exp!(M::KendallsShapeSpace, q, p, X)
-    return exp!(get_embedding(M), q, p, X)
+    Xh = horizontal_component(M, p, X)
+    return exp!(get_embedding(M), q, p, Xh)
 end
 
 embed(::KendallsShapeSpace, p) = p
@@ -82,10 +83,32 @@ function get_embedding(::KendallsShapeSpace{N,K}) where {N,K}
     return KendallsPreShapeSpace(N, K)
 end
 
-function Base.isapprox(M::KendallsShapeSpace, p, X, Y; atol=sqrt(max_eps(X, Y)), kwargs...)
+"""
+    horizontal_component(::KendallsShapeSpace, p, X)
+
+Compute the horizontal component of tangent vector `X` at `p` on [`KendallsShapeSpace`](@ref)
+`M`. See [^Guigui2021], Section 2.3 for details.
+"""
+horizontal_component(::KendallsShapeSpace, p, X)
+
+function horizontal_component!(::KendallsShapeSpace, Y, p, X)
+    B = p * transpose(p)
+    C = X * transpose(p) - p * transpose(X)
+    A = sylvc(B, B, C)
+    Y .= X .- A * p
+    return Y
+end
+
+function inner(M::KendallsShapeSpace, p, X, Y)
+    Xh = horizontal_component(M, p, X)
+    Yh = horizontal_component(M, p, Y)
+    return inner(get_embedding(M), p, Xh, Yh)
+end
+
+function _isapprox(M::KendallsShapeSpace, p, X, Y; atol=sqrt(max_eps(X, Y)), kwargs...)
     return isapprox(norm(M, p, X - Y), 0; atol=atol, kwargs...)
 end
-function Base.isapprox(M::KendallsShapeSpace, p, q; atol=sqrt(max_eps(p, q)), kwargs...)
+function _isapprox(M::KendallsShapeSpace, p, q; atol=sqrt(max_eps(p, q)), kwargs...)
     return isapprox(distance(M, p, q), 0; atol=atol, kwargs...)
 end
 
@@ -99,13 +122,8 @@ is_flat(M::KendallsShapeSpace) = false
 """
     log(M::KendallsShapeSpace, p, q)
 
-Compute the logarithmic map on [`KendallsShapeSpace`](@ref) `M`. See [^Guigui2021] for discussion
-about its computation.
-
-[^Guigui2021]:
-    > N. Guigui, E. Maignant, A. Trouvé, and X. Pennec, “Parallel Transport on Kendall Shape
-    > Spaces,” in Geometric Science of Information, Cham, 2021, pp. 103–110.
-    > doi: [10.1007/978-3-030-80209-7_12](https://doi.org/10.1007/978-3-030-80209-7_12).
+Compute the logarithmic map on [`KendallsShapeSpace`](@ref) `M`.
+See the [`exp`](@ref exp(::KendallsShapeSpace, ::Any, ::Any)onential map for more details
 """
 log(M::KendallsShapeSpace, p, q)
 
@@ -119,11 +137,26 @@ end
 @doc raw"""
     manifold_dimension(M::KendallsShapeSpace)
 
-Return the dimension of the [`KendallsShapeSpace`](@ref) manifold `M`. The dimension is given by
-``n(k - 1) - 1 - n(n - 1)/2``.
+Return the dimension of the [`KendallsShapeSpace`](@ref) manifold `M`. The dimension is
+given by ``n(k - 1) - 1 - n(n - 1)/2`` in the typical case where ``k \geq n+1``, and
+``(k + 1)(k - 2) / 2`` otherwise, unless ``k`` is equal to 1, in which case the dimension
+is 0. See [^Kendall1984] for a discussion of the over-dimensioned case.
 """
 function manifold_dimension(::KendallsShapeSpace{n,k}) where {n,k}
-    return n * (k - 1) - 1 - div(n * (n - 1), 2)
+    if k < n + 1 # over-dimensioned case
+        if k == 1
+            return 0
+        else
+            return div((k + 1) * (k - 2), 2)
+        end
+    else
+        return n * (k - 1) - 1 - div(n * (n - 1), 2)
+    end
+end
+
+function norm(M::KendallsShapeSpace, p, X)
+    Xh = horizontal_component(M, p, X)
+    return norm(get_embedding(M), p, Xh)
 end
 
 function project!(M::KendallsShapeSpace, q, p)
@@ -145,10 +178,6 @@ with mean zero and standard deviation `σ`.
 """
 rand(::KendallsShapeSpace; σ::Real=1.0)
 
-function Random.rand!(M::KendallsShapeSpace{n,k}, pX; vector_at=nothing) where {n,k}
-    rand!(get_embedding(M), pX; vector_at=vector_at)
-    return pX
-end
 function Random.rand!(
     rng::AbstractRNG,
     M::KendallsShapeSpace{n,k},

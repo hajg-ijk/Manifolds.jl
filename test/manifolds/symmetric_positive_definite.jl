@@ -3,7 +3,7 @@ include("../utils.jl")
 @testset "Symmetric Positive Definite Matrices" begin
     M1 = SymmetricPositiveDefinite(3)
     @test repr(M1) == "SymmetricPositiveDefinite(3)"
-    M2 = MetricManifold(SymmetricPositiveDefinite(3), Manifolds.LinearAffineMetric())
+    M2 = MetricManifold(SymmetricPositiveDefinite(3), Manifolds.AffineInvariantMetric())
     M3 = MetricManifold(SymmetricPositiveDefinite(3), Manifolds.LogCholeskyMetric())
     M4 = MetricManifold(SymmetricPositiveDefinite(3), Manifolds.LogEuclideanMetric())
     M5 = MetricManifold(SymmetricPositiveDefinite(3), Manifolds.BuresWassersteinMetric())
@@ -115,7 +115,7 @@ include("../utils.jl")
         @test isapprox(distance(M4, p, q), sqrt(2) * log(2))
         @test manifold_dimension(M4) == manifold_dimension(M1)
     end
-    @testset "Test for tangent ONB on LinearAffineMetric" begin
+    @testset "Test for tangent ONB on AffineInvariantMetric" begin
         v = log(M2, p, q)
         donb = get_basis(base_manifold(M2), p, DiagonalizingOrthonormalBasis(v))
         Xs = get_vectors(base_manifold(M2), p, donb)
@@ -266,5 +266,14 @@ include("../utils.jl")
         @test isapprox(exp!(M, pS, p, zero_vector(M, p)), p)
         @test ismissing(pS.sqrt)
         @test ismissing(pS.sqrt_inv)
+    end
+
+    @testset "test BigFloat" begin
+        M = SymmetricPositiveDefinite(2)
+        p1 = BigFloat[
+            1.6590891025248637458133771360735408961772918701171875 -2.708777790960681386422947980463504791259765625e-07
+            -2.708777790960681386422947980463504791259765625e-07 1.6590893171834280028775765458703972399234771728515625
+        ]
+        @test is_point(M, p1)
     end
 end

@@ -110,7 +110,7 @@ on the [`GeneralizedStiefel`](@ref) manifold `M`. The formula reads
 i.e. the metric induced by the scalar product `B` from the embedding, restricted to the
 tangent space.
 """
-inner(M::GeneralizedStiefel, p, X, Y) = dot(X, M.B * Y)
+inner(M::GeneralizedStiefel, p, X, Y) = dot(X, M.B, Y)
 
 """
     is_flat(M::GeneralizedStiefel)
@@ -151,7 +151,7 @@ project(::GeneralizedStiefel, ::Any)
 function project!(M::GeneralizedStiefel, q, p)
     s = svd(p)
     e = eigen(s.U' * M.B * s.U)
-    qsinv = e.vectors * Diagonal(1 ./ sqrt.(e.values))
+    qsinv = e.vectors ./ sqrt.(transpose(e.values))
     q .= s.U * qsinv * e.vectors' * s.V'
     return q
 end
@@ -173,9 +173,43 @@ project(::GeneralizedStiefel, ::Any, ::Any)
 
 function project!(M::GeneralizedStiefel, Y, p, X)
     A = p' * M.B' * X
-    copyto!(Y, X - p * Hermitian((A + A') / 2))
+    copyto!(Y, X)
+    mul!(Y, p, Hermitian((A .+ A') ./ 2), -1, 1)
     return Y
 end
+
+@doc raw"""
+    rand(::GeneralizedStiefel; vector_at=nothing, σ::Real=1.0)
+
+When `vector_at` is `nothing`, return a random (Gaussian) point `p` on the [`GeneralizedStiefel`](@ref)
+manifold `M` by generating a (Gaussian) matrix with standard deviation `σ` and return the
+(generalized) orthogonalized version, i.e. return the projection onto the manifold of the
+Q component of the QR decomposition of the random matrix of size ``n×k``.
+
+When `vector_at` is not `nothing`, return a (Gaussian) random vector from the tangent space
+``T_{vector\_at}\mathrm{St}(n,k)`` with mean zero and standard deviation `σ` by projecting a
+random Matrix onto the tangent vector at `vector_at`.
+"""
+rand(::GeneralizedStiefel; σ::Real=1.0)
+
+function Random.rand!(
+    rng::AbstractRNG,
+    M::GeneralizedStiefel{n,k,ℝ},
+    pX;
+    vector_at=nothing,
+    σ::Real=one(real(eltype(pX))),
+) where {n,k}
+    if vector_at === nothing
+        A = σ * randn(rng, eltype(pX), n, k)
+        project!(M, pX, Matrix(qr(A).Q))
+    else
+        Z = σ * randn(rng, eltype(pX), size(pX))
+        project!(M, pX, vector_at, Z)
+        normalize!(pX)
+    end
+    return pX
+end
+
 @doc raw"""
     retract(M::GeneralizedStiefel, p, X)
     retract(M::GeneralizedStiefel, p, X, ::PolarRetraction)
@@ -192,12 +226,14 @@ retract(::GeneralizedStiefel, ::Any...)
 
 default_retraction_method(::GeneralizedStiefel) = ProjectionRetraction()
 
-function retract_polar!(M::GeneralizedStiefel, q, p, X)
-    project!(M, q, p + X)
+function retract_polar!(M::GeneralizedStiefel, q, p, X, t::Number)
+    q .= p .+ t .* X
+    project!(M, q, q)
     return q
 end
-function retract_project!(M::GeneralizedStiefel, q, p, X)
-    project!(M, q, p + X)
+function retract_project!(M::GeneralizedStiefel, q, p, X, t::Number)
+    q .= p .+ t .* X
+    project!(M, q, q)
     return q
 end
 

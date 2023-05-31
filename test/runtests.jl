@@ -10,9 +10,8 @@ include("utils.jl")
 @testset "Manifolds.jl" begin
     if TEST_GROUP ∈ ["all", "test_manifolds"]
         include_test("differentiation.jl")
-
         include_test("ambiguities.jl")
-
+        include_test("test_deprecated.jl")
         @testset "utils test" begin
             Random.seed!(42)
             @testset "usinc_from_cos" begin
@@ -104,6 +103,10 @@ include("utils.jl")
                 @test allocate([1 2; 3 4], Float64, Size(3, 3)) isa Matrix{Float64}
                 @test allocate(SA[1 2; 3 4], Float64, Size(3, 3)) isa MMatrix{3,3,Float64}
                 @test allocate(SA[1 2; 3 4], Size(3, 3)) isa MMatrix{3,3,Int}
+                @test Manifolds.quat_promote(Float64) === Quaternions.QuaternionF64
+                @test Manifolds.quat_promote(Float32) === Quaternions.QuaternionF32
+                @test Manifolds.quat_promote(QuaternionF64) === Quaternions.QuaternionF64
+                @test Manifolds.quat_promote(QuaternionF32) === Quaternions.QuaternionF32
             end
             @testset "eigen_safe" begin
                 @test Manifolds.eigen_safe(SA[1.0 0.0; 0.0 1.0]) isa
@@ -137,6 +140,7 @@ include("utils.jl")
         include_test("manifolds/elliptope.jl")
         include_test("manifolds/euclidean.jl")
         include_test("manifolds/fixed_rank.jl")
+        include_test("manifolds/flag.jl")
         include_test("manifolds/generalized_grassmann.jl")
         include_test("manifolds/generalized_stiefel.jl")
         include_test("manifolds/grassmann.jl")
@@ -176,6 +180,9 @@ include("utils.jl")
 
         include_test("metric.jl")
         include_test("statistics.jl")
+    end
+
+    if TEST_GROUP ∈ ["all", "test_integration"]
         include_test("approx_inverse_retraction.jl")
 
         # manifolds requiring ODE solvers
@@ -203,7 +210,7 @@ include("utils.jl")
         include_test("groups/connections.jl")
         include_test("groups/metric.jl")
     end
-    if TEST_GROUP ∈ ["all", "test_manifolds"] && !Sys.isapple()
+    if TEST_GROUP ∈ ["all", "test_integration"] && !Sys.isapple()
         include_test("recipes.jl")
     end
 end

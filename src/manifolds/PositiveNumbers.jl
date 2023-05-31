@@ -142,6 +142,7 @@ Compute the exponential map on the [`PositiveNumbers`](@ref) `M`.
 Base.exp(::PositiveNumbers, ::Any, ::Any)
 
 Base.exp(::PositiveNumbers, p::Real, X::Real) = p * exp(X / p)
+Base.exp(::PositiveNumbers, p::Real, X::Real, t::Real) = p * exp(t * X / p)
 
 exp!(::PositiveNumbers, q, p, X) = (q .= p .* exp.(X ./ p))
 
@@ -284,14 +285,6 @@ function parallel_transport_to!(::PositiveNumbers, Y, p, X, q)
     return (Y .= X .* q ./ p)
 end
 
-function Random.rand!(::PositiveNumbers, pX; σ=one(eltype(pX)), vector_at=nothing)
-    if vector_at === nothing
-        pX .= exp(randn() * σ)
-    else
-        pX .= vector_at * randn() * σ
-    end
-    return pX
-end
 function Random.rand!(
     rng::AbstractRNG,
     ::PositiveNumbers,

@@ -51,14 +51,14 @@ function allocate_result(G::SemidirectProductGroup, ::typeof(identity_element))
     N, H = M.manifolds
     np = allocate_result(N, identity_element)
     hp = allocate_result(H, identity_element)
-    return ProductRepr(np, hp)
+    return ArrayPartition(np, hp)
 end
 
 """
     identity_element(G::SemidirectProductGroup)
 
-Get the identity element of [`SemidirectProductGroup`](@ref) `G`. Uses [`ProductRepr`](@ref)
-to represent the point.
+Get the identity element of [`SemidirectProductGroup`](@ref) `G`. Uses `ArrayPartition`
+from `RecursiveArrayTools.jl` to represent the point.
 """
 identity_element(G::SemidirectProductGroup)
 
@@ -123,13 +123,15 @@ function _compose!(G::SemidirectProductGroup, x, p, q)
     M = base_manifold(G)
     N, H = M.manifolds
     A = G.op.action
+    x_tmp = allocate(x)
     np, hp = submanifold_components(G, p)
     nq, hq = submanifold_components(G, q)
-    nx, hx = submanifold_components(G, x)
+    nx, hx = submanifold_components(G, x_tmp)
     compose!(H, hx, hp, hq)
     nxtmp = apply(A, hp, nq)
     compose!(N, nx, np, nxtmp)
     @inbounds _padpoint!(G, x)
+    copyto!(x, x_tmp)
     return x
 end
 
@@ -220,12 +222,7 @@ function zero_vector!(G::SemidirectProductGroup, X, p)
     return X
 end
 
-function Base.isapprox(
-    G::SemidirectProductGroup,
-    p::AbstractArray,
-    q::AbstractArray;
-    kwargs...,
-)
+function isapprox(G::SemidirectProductGroup, p, q; kwargs...)
     M = base_manifold(G)
     N, H = M.manifolds
     np, hp = submanifold_components(G, p)
@@ -233,13 +230,7 @@ function Base.isapprox(
     return isapprox(N, np, nq; kwargs...) && isapprox(H, hp, hq; kwargs...)
 end
 
-function Base.isapprox(
-    G::SemidirectProductGroup,
-    p,
-    X::AbstractMatrix,
-    Y::AbstractMatrix;
-    kwargs...,
-)
+function isapprox(G::SemidirectProductGroup, p, X, Y; kwargs...)
     M = base_manifold(G)
     N, H = M.manifolds
     np, hp = submanifold_components(G, p)
@@ -250,8 +241,8 @@ end
 function isapprox(
     G::SemidirectProductGroup{𝔽,N,H,A},
     ::Identity{SemidirectProductOperation{A}},
-    X::AbstractMatrix,
-    Y::AbstractMatrix;
+    X,
+    Y;
     kwargs...,
 ) where {𝔽,N<:AbstractManifold,H<:AbstractManifold,A<:AbstractGroupAction}
     return isapprox(G, identity_element(G), X, Y; kwargs...)

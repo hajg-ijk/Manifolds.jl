@@ -169,8 +169,10 @@ Compute the exponential map on the [`Euclidean`](@ref) manifold `M` from `p` in 
 ````
 """
 Base.exp(::Euclidean, p, X) = p + X
+Base.exp(::Euclidean, p, X, t::Number) = p .+ t .* X
 
 exp!(::Euclidean, q, p, X) = (q .= p .+ X)
+exp!(::Euclidean, q, p, X, t::Number) = (q .= p .+ t .* X)
 
 function get_basis_diagonalizing(
     M::Euclidean,
@@ -569,10 +571,6 @@ project(::Euclidean{Tuple{}}, ::Number, X::Number) = X
 
 project!(::Euclidean, Y, p, X) = copyto!(Y, X)
 
-function Random.rand!(::Euclidean, pX; σ=one(eltype(pX)), vector_at=nothing)
-    pX .= randn(size(pX)) .* σ
-    return pX
-end
 function Random.rand!(
     rng::AbstractRNG,
     ::Euclidean,
@@ -580,7 +578,7 @@ function Random.rand!(
     σ=one(eltype(pX)),
     vector_at=nothing,
 )
-    pX .= randn(rng, size(pX)) .* σ
+    pX .= randn(rng, eltype(pX), size(pX)) .* σ
     return pX
 end
 

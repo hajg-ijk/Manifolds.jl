@@ -24,6 +24,10 @@ import ManifoldsBase:
     base_manifold,
     change_basis,
     change_basis!,
+    change_metric,
+    change_metric!,
+    change_representer,
+    change_representer!,
     check_point,
     check_size,
     check_vector,
@@ -74,6 +78,7 @@ import ManifoldsBase:
     injectivity_radius_exp,
     inner,
     isapprox,
+    _isapprox,
     is_flat,
     is_point,
     is_vector,
@@ -81,9 +86,8 @@ import ManifoldsBase:
     inverse_retract!,
     _inverse_retract,
     _inverse_retract!,
-    inverse_retract_caley!,
+    inverse_retract_cayley!,
     inverse_retract_embedded!,
-    inverse_retract_nlsolve!,
     inverse_retract_pade!,
     inverse_retract_polar!,
     inverse_retract_project!,
@@ -113,7 +117,7 @@ import ManifoldsBase:
     representation_size,
     retract,
     retract!,
-    retract_caley!,
+    retract_cayley!,
     retract_exp_ode!,
     retract_pade!,
     retract_polar!,
@@ -167,7 +171,6 @@ import Base:
     transpose
 
 using Base.Iterators: repeated
-using Colors: RGBA
 using Distributions
 using Einsum: @einsum
 using HybridArrays
@@ -175,6 +178,7 @@ using Kronecker
 using Graphs
 using LinearAlgebra
 using ManifoldsBase:
+    @next_trait_function,
     ℝ,
     ℂ,
     ℍ,
@@ -301,11 +305,9 @@ using ManifoldDiff:
 import ManifoldDiff: riemannian_gradient, riemannian_gradient!
 
 using Markdown: @doc_str
-using MatrixEquations: lyapc
+using MatrixEquations: lyapc, sylvc
 using Quaternions: Quaternions
 using Random
-using RecipesBase
-using RecipesBase: @recipe, @series
 using RecursiveArrayTools: ArrayPartition
 using Requires
 using SimpleWeightedGraphs: AbstractSimpleWeightedGraph, get_weight
@@ -317,6 +319,8 @@ using StatsBase: AbstractWeights
 include("utils.jl")
 
 include("product_representations.jl")
+
+include("manifold_fallbacks.jl")
 
 # Main Meta Manifolds
 include("manifolds/ConnectionManifold.jl")
@@ -347,6 +351,7 @@ METAMANIFOLDS = [
 
 # Features II: That require metas
 include("atlases.jl")
+include("differentiation/ode_callback.jl")
 include("cotangent_space.jl")
 
 # Meta Manifolds II: Power Manifolds
@@ -365,6 +370,9 @@ include("manifolds/Circle.jl")
 include("manifolds/Elliptope.jl")
 include("manifolds/EmbeddedTorus.jl")
 include("manifolds/FixedRankMatrices.jl")
+include("manifolds/Flag.jl")
+include("manifolds/FlagOrthogonal.jl")
+include("manifolds/FlagStiefel.jl")
 include("manifolds/GeneralizedGrassmann.jl")
 include("manifolds/GeneralizedStiefel.jl")
 include("manifolds/Hyperbolic.jl")
@@ -385,7 +393,7 @@ include("manifolds/Symmetric.jl")
 include("manifolds/SymmetricPositiveDefinite.jl")
 include("manifolds/SymmetricPositiveDefiniteBuresWasserstein.jl")
 include("manifolds/SymmetricPositiveDefiniteGeneralizedBuresWasserstein.jl")
-include("manifolds/SymmetricPositiveDefiniteLinearAffine.jl")
+include("manifolds/SymmetricPositiveDefiniteAffineInvariant.jl")
 include("manifolds/SymmetricPositiveDefiniteLogCholesky.jl")
 include("manifolds/SymmetricPositiveDefiniteLogEuclidean.jl")
 include("manifolds/SymmetricPositiveSemidefiniteFixedRank.jl")
@@ -445,6 +453,9 @@ include("groups/rotation_action.jl")
 
 include("groups/special_euclidean.jl")
 
+# final utilities
+include("trait_recursion_breaking.jl")
+
 @doc raw"""
     Base.in(p, M::AbstractManifold; kwargs...)
     p ∈ M
@@ -459,58 +470,76 @@ Base.in(p, M::AbstractManifold; kwargs...) = is_point(M, p, false; kwargs...)
     X ∈ TangentSpaceAtPoint(M,p)
 
 Check whether `X` is a tangent vector from (in) the tangent space $T_p\mathcal M$, i.e.
-the [`TangentSpaceAtPoint`](@ref) at `p` on the [`AbstractManifold`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/types.html#ManifoldsBase.AbstractManifold)  `M`.
+the [`TangentSpaceAtPoint`](@ref Manifolds.TangentSpaceAtPoint) at `p` on the [`AbstractManifold`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/types.html#ManifoldsBase.AbstractManifold)  `M`.
 This method uses [`is_vector`](https://juliamanifolds.github.io/ManifoldsBase.jl/stable/functions.html#ManifoldsBase.is_vector) deactivating the error throw option.
 """
 function Base.in(X, TpM::TangentSpaceAtPoint; kwargs...)
     return is_vector(base_manifold(TpM), TpM.point, X, false; kwargs...)
 end
 
+# functions populated with methods by extensions
+
+function solve_chart_log_bvp end
+function estimate_distance_from_bvp end
+
+function solve_chart_exp_ode end
+function solve_chart_parallel_transport_ode end
+
+function find_eps end
+function test_parallel_transport end
+function test_manifold end
+function test_group end
+function test_action end
+
+# end of functions populated with methods by extensions
+
 function __init__()
-    @require BoundaryValueDiffEq = "764a87c0-6b3e-53db-9096-fe964310641d" begin
-        using .BoundaryValueDiffEq
-        include("differentiation/bvp.jl")
-    end
-
-    @require OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed" begin
-        using .OrdinaryDiffEq: ODEProblem, AutoVern9, Rodas5, solve
-        include("differentiation/ode.jl")
-
-        @require DiffEqCallbacks = "459566f4-90b8-5000-8ac3-15dfb0a30def" begin
-            using .DiffEqCallbacks
-            include("differentiation/ode_callback.jl")
+    @static if isdefined(Base.Experimental, :register_error_hint)
+        Base.Experimental.register_error_hint(MethodError) do io, exc, argtypes, kwargs
+            if exc.f === solve_exp_ode
+                print(io, "\nDid you forget to load OrdinaryDiffEq? For example: ")
+                printstyled(io, "`using OrdinaryDiffEq`", color=:cyan)
+            end
         end
     end
 
-    @require NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56" begin
-        using .NLsolve: NLsolve
-        include("nlsolve.jl")
-    end
+    @static if !isdefined(Base, :get_extension)
+        @require OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed" begin
+            @require DiffEqCallbacks = "459566f4-90b8-5000-8ac3-15dfb0a30def" begin
+                include("../ext/ManifoldsOrdinaryDiffEqDiffEqCallbacksExt.jl")
+            end
+        end
 
-    @require Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40" begin
-        using .Test: Test
-        include("tests/tests_general.jl")
-        export test_manifold
-        include("tests/tests_group.jl")
-        export test_group, test_action
-    end
+        @require OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed" begin
+            include("../ext/ManifoldsOrdinaryDiffEqExt.jl")
+        end
 
-    @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" begin
-        using RecipesBase: @recipe, @series
-        using Colors: RGBA
-        include("recipes.jl")
-    end
+        @require BoundaryValueDiffEq = "764a87c0-6b3e-53db-9096-fe964310641d" begin
+            include("../ext/ManifoldsBoundaryValueDiffEqExt.jl")
+        end
 
-    @require RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01" begin
-        @require Colors = "5ae59095-9a9b-59fe-a467-6f913c188581" begin
-            using .RecipesBase: @recipe, @series
-            using Colors: RGBA
-            include("recipes.jl")
+        @require NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56" begin
+            include("../ext/ManifoldsNLsolveExt.jl")
+        end
+
+        @require RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01" begin
+            @require Colors = "5ae59095-9a9b-59fe-a467-6f913c188581" begin
+                include("../ext/ManifoldsRecipesBaseExt.jl")
+            end
+        end
+
+        @require Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40" begin
+            include("../ext/ManifoldsTestExt/ManifoldsTestExt.jl")
         end
     end
 
     return nothing
 end
+
+include("deprecated.jl")
+
+export test_manifold
+export test_group, test_action
 
 #
 export CoTVector, AbstractManifold, AbstractManifoldPoint, TVector
@@ -524,6 +553,7 @@ export Euclidean,
     Elliptope,
     EssentialManifold,
     FixedRankMatrices,
+    Flag,
     GeneralizedGrassmann,
     GeneralizedStiefel,
     Grassmann,
@@ -614,7 +644,7 @@ export AbstractMetric,
     BuresWassersteinMetric,
     EuclideanMetric,
     GeneralizedBuresWassersteinMetric,
-    LinearAffineMetric,
+    AffineInvariantMetric,
     LogCholeskyMetric,
     LogEuclideanMetric,
     MinkowskiMetric,
@@ -718,6 +748,8 @@ export ×,
     grad_euclidean_to_manifold!,
     hat,
     hat!,
+    horizontal_component,
+    horizontal_component!,
     horizontal_lift,
     horizontal_lift!,
     identity_element,
@@ -803,6 +835,8 @@ export ×,
     vector_transport_to!,
     vee,
     vee!,
+    vertical_component,
+    vertical_component!,
     zero_vector,
     zero_vector!
 # Lie group types & functions

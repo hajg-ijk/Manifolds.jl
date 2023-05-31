@@ -16,7 +16,7 @@ using ManifoldsBase: TFVector
         @test injectivity_radius(M, ProjectionRetraction()) == π / 2
         @test base_manifold(M) === M
         @test is_default_metric(M, EuclideanMetric())
-        @test !is_default_metric(M, LinearAffineMetric())
+        @test !is_default_metric(M, AffineInvariantMetric())
         @test !is_point(M, [1.0, 0.0, 0.0, 0.0])
         @test !is_vector(M, [1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0])
         @test_throws DomainError is_point(M, [2.0, 0.0, 0.0], true)
@@ -67,6 +67,13 @@ using ManifoldsBase: TFVector
             )
             @test isapprox(-pts[1], exp(M, pts[1], log(M, pts[1], -pts[1])))
         end
+    end
+
+    @testset "small and large distance tests" begin
+        p = [-0.18337624444127734, 0.8345313166281056, 0.5195484910396462]
+        q = [-0.18337624444127681, 0.8345313166281058, 0.5195484910396464]
+        @test isapprox(distance(M, p, q), 5.828670879282073e-16)
+        @test isapprox(distance(M, p, -q), 3.1415926535897927; atol=eps())
     end
 
     @testset "Distribution tests" begin
@@ -140,6 +147,10 @@ using ManifoldsBase: TFVector
         Y = [2.0, 1.0im, 20.0]
         X = project(M, q, Y)
         @test is_vector(M, q, X, true; atol=10^(-14))
+        Random.seed!(42)
+        r = rand(M)
+        @test is_point(M, r)
+        @test norm(imag.(r)) != 0
     end
 
     @testset "Quaternion Sphere" begin

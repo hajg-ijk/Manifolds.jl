@@ -35,6 +35,9 @@ include("../utils.jl")
             @test injectivity_radius(M, p) == π / 2
             @test injectivity_radius(M, p, ExponentialRetraction()) == π / 2
             @test mean(M, [p, p, p]) == p
+            Random.seed!(42)
+            @test is_point(M, rand(M))
+            @test is_vector(M, p, rand(M; vector_at=p))
         end
         @testset "Embedding and Projection" begin
             q = similar(p)
@@ -102,6 +105,7 @@ include("../utils.jl")
                 test_default_vector_transport=false,
                 projection_atol_multiplier=15.0,
                 retraction_atol_multiplier=10.0,
+                is_point_atol_multiplier=10.0,
                 is_tangent_atol_multiplier=4 * 10.0^2,
                 retraction_methods=[PolarRetraction(), ProjectionRetraction()],
                 mid_point12=nothing,
@@ -138,6 +142,26 @@ include("../utils.jl")
             @test representation_size(M) == (3, 2)
             @test manifold_dimension(M) == 8
             @test !is_flat(M)
+        end
+    end
+
+    @testset "small distance tests" begin
+        n, k = 3, 2
+        B = [1.0 0.0 0.0; 0.0 4.0 0.0; 0.0 0.0 1.0]
+        @testset for fT in (Float32, Float64), T in (fT, Complex{fT})
+            𝔽 = T isa Complex ? ℂ : ℝ
+            M = GeneralizedGrassmann(n, k, B, 𝔽)
+            U = Unitary(k, 𝔽)
+            rT = real(T)
+            atol = eps(rT)^(1 // 4)
+            rtol = eps(rT)
+            @testset for t in (zero(rT), eps(rT)^(1 // 4) / 8, eps(rT)^(1 // 4))
+                p = project(M, randn(T, representation_size(M)))
+                X = project(M, p, randn(T, representation_size(M)))
+                X ./= norm(M, p, X)
+                project!(M, X, p, X)
+                @test distance(M, p, exp(M, p, t * X)) ≈ t atol = atol rtol = rtol
+            end
         end
     end
 end

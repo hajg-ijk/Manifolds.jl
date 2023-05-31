@@ -31,6 +31,7 @@ using NLsolve
         @test isapprox(G, Identity(G), q)
         @test apply(GroupOperationAction(G), q, q) == q
         @test inverse_apply(GroupOperationAction(G), q, q) == q
+        @test is_point(G, Identity(MultiplicationOperation()))
     end
 
     @testset "GL(1,𝔽) special cases" begin
@@ -130,6 +131,8 @@ using NLsolve
                 basis_types_to_from=basis_types,
                 exp_log_atol_multiplier=1e7,
                 retraction_atol_multiplier=1e7,
+                test_rand_point=true,
+                test_rand_tvector=true,
             )
         end
     end

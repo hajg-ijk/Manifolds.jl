@@ -246,6 +246,23 @@ function exp!(::TraitList{IsConnectionManifold}, M::AbstractDecoratorManifold, q
         ODEExponentialRetraction(ManifoldsBase.default_retraction_method(M, typeof(p))),
     )
 end
+function exp!(
+    ::TraitList{IsConnectionManifold},
+    M::AbstractDecoratorManifold,
+    q,
+    p,
+    X,
+    t::Number,
+)
+    return retract!(
+        M,
+        q,
+        p,
+        X,
+        t,
+        ODEExponentialRetraction(ManifoldsBase.default_retraction_method(M)),
+    )
+end
 
 """
     gaussian_curvature(M::AbstractManifold, p, B::AbstractBasis; backend::AbstractDiffBackend = default_differential_backend())
@@ -293,10 +310,11 @@ function retract_exp_ode!(
     q,
     p,
     X,
+    t::Number,
     ::AbstractRetractionMethod,
     b::AbstractBasis,
 )
-    sol = solve_exp_ode(M, p, X; basis=b, dense=false)
+    sol = solve_exp_ode(M, p, X, t; basis=b, dense=false)
     copyto!(q, sol)
     return q
 end
@@ -350,11 +368,14 @@ function riemann_tensor(
 end
 @trait_function riemann_tensor(M::AbstractDecoratorManifold, p, B::AbstractBasis; kwargs...)
 
+function solve_exp_ode end
+
 @doc raw"""
     solve_exp_ode(
         M::AbstractConnectionManifold,
         p,
         X,
+        t::Number,
         B::AbstractBasis;
         backend::AbstractDiffBackend = default_differential_backend(),
         solver = AutoVern9(Rodas5()),
@@ -385,13 +406,4 @@ in an embedded space.
     using OrdinaryDiffEq
     ```
 """
-function solve_exp_ode(M, p, X; kwargs...)
-    throw(
-        ErrorException(
-            """
-            solve_exp_ode not implemented on $(typeof(M)) for point $(typeof(p)), vector $(typeof(X)).
-            For a suitable default, enter `using OrdinaryDiffEq`.
-            """,
-        ),
-    )
-end
+solve_exp_ode(M::AbstractManifold, p, X, t::Number; kwargs...)

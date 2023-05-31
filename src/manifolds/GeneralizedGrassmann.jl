@@ -87,7 +87,8 @@ change_metric(M::GeneralizedGrassmann, ::EuclideanMetric, ::Any, ::Any)
 
 function change_metric!(M::GeneralizedGrassmann, Y, ::EuclideanMetric, p, X)
     C2 = cholesky(M.B).L
-    Y .= C2 \ X
+    copyto!(Y, X)
+    ldiv!(C2, Y)
     return Y
 end
 
@@ -125,25 +126,18 @@ end
 Compute the Riemannian distance on [`GeneralizedGrassmann`](@ref)
 manifold `M`$= \mathrm{Gr}(n,k,B)$.
 
-Let $USV = p^\mathrm{H}Bq$ denote the SVD decomposition of
-$p^\mathrm{H}Bq$, where $\cdot^{\mathrm{H}}$ denotes the complex
-conjugate transposed or Hermitian. Then the distance is given by
+The distance is given by
 ````math
-d_{\mathrm{Gr}(n,k,B)}(p,q) = \operatorname{norm}(\operatorname{Re}(b)).
-````
-where
-
-````math
-b_{i}=\begin{cases}
-0 & \text{if} \; S_i ≥ 1\\
-\arccos(S_i) & \, \text{if} \; S_i<1.
-\end{cases}
+d_{\mathrm{Gr}(n,k,B)}(p,q) = \operatorname{norm}(\log_p(q)).
 ````
 """
 function distance(M::GeneralizedGrassmann, p, q)
-    p ≈ q && return zero(real(eltype(p)))
-    a = svd(p' * M.B * q).S
-    return sqrt(sum(x -> abs2(acos(clamp(x, -1, 1))), a))
+    z = p' * M.B' * q
+    X = allocate_result(M, log, p, q)
+    X .= q / z .- p
+    d = svd(X)
+    X .= d.U .* atan.(d.S')
+    return norm(M, p, X)
 end
 
 embed(::GeneralizedGrassmann, p) = p
@@ -170,9 +164,9 @@ function exp!(M::GeneralizedGrassmann, q, p, X)
     d = svd(X' * M.B * X)
     V = d.Vt
     S = abs.(sqrt.(d.S))
-    U = X * (V / Diagonal(S))
-    z = p * V * Diagonal(cos.(S)) * V + U * Diagonal(sin.(S)) * V
-    return copyto!(q, project(M, z))
+    mul!(q, p * (V .* cos.(S')) + X * (V .* usinc.(S')), V)
+    project!(M, q, q)
+    return q
 end
 
 @doc raw"""
@@ -210,19 +204,12 @@ g_p(X,Y) = \operatorname{tr}(X^{\mathrm{H}}BY),
 
 where $\cdot^{\mathrm{H}}$ denotes the complex conjugate transposed or Hermitian.
 """
-inner(M::GeneralizedGrassmann{n,k}, p, X, Y) where {n,k} = dot(X, M.B * Y)
+inner(M::GeneralizedGrassmann{n,k}, p, X, Y) where {n,k} = dot(X, M.B, Y)
 
-function Base.isapprox(
-    M::GeneralizedGrassmann,
-    p,
-    X,
-    Y;
-    atol=sqrt(max_eps(X, Y)),
-    kwargs...,
-)
+function _isapprox(M::GeneralizedGrassmann, p, X, Y; atol=sqrt(max_eps(X, Y)), kwargs...)
     return isapprox(norm(M, p, X - Y), 0; atol=atol, kwargs...)
 end
-function Base.isapprox(M::GeneralizedGrassmann, p, q; atol=sqrt(max_eps(p, q)), kwargs...)
+function _isapprox(M::GeneralizedGrassmann, p, q; atol=sqrt(max_eps(p, q)), kwargs...)
     return isapprox(distance(M, p, q), 0; atol=atol, kwargs...)
 end
 
@@ -249,12 +236,11 @@ In this formula the $\operatorname{atan}$ is meant elementwise.
 """
 log(::GeneralizedGrassmann, ::Any...)
 
-function log!(M::GeneralizedGrassmann{n,k}, X, p, q) where {n,k}
-    z = q' * M.B * p
-    At = q' - z * p'
-    Bt = z \ At
-    d = svd(Bt')
-    return X .= view(d.U, :, 1:k) * Diagonal(atan.(view(d.S, 1:k))) * view(d.Vt, 1:k, :)
+function log!(M::GeneralizedGrassmann, X, p, q)
+    z = p' * M.B' * q
+    X .= q / z .- p
+    d = svd(X)
+    return mul!(X, d.U, atan.(d.S) .* d.Vt)
 end
 
 @doc raw"""
@@ -302,7 +288,7 @@ project(::GeneralizedGrassmann, ::Any)
 function project!(M::GeneralizedGrassmann, q, p)
     s = svd(p)
     e = eigen(s.U' * M.B * s.U)
-    qsinv = e.vectors * Diagonal(1 ./ sqrt.(e.values))
+    qsinv = e.vectors ./ sqrt.(transpose(e.values))
     q .= s.U * qsinv * e.vectors' * s.V'
     return q
 end
@@ -324,8 +310,41 @@ project(::GeneralizedGrassmann, ::Any, ::Any)
 
 function project!(M::GeneralizedGrassmann, Y, p, X)
     A = p' * M.B' * X
-    copyto!(Y, X - p * Hermitian((A + A') / 2))
+    copyto!(Y, X)
+    mul!(Y, p, Hermitian((A .+ A') ./ 2), -1, 1)
     return Y
+end
+
+@doc raw"""
+    rand(::GeneralizedGrassmann; vector_at=nothing, σ::Real=1.0)
+
+When `vector_at` is `nothing`, return a random (Gaussian) point `p` on the [`GeneralizedGrassmann`](@ref)
+manifold `M` by generating a (Gaussian) matrix with standard deviation `σ` and return the
+(generalized) orthogonalized version, i.e. return the projection onto the manifold of the
+Q component of the QR decomposition of the random matrix of size ``n×k``.
+
+When `vector_at` is not `nothing`, return a (Gaussian) random vector from the tangent space
+``T_{vector\_at}\mathrm{St}(n,k)`` with mean zero and standard deviation `σ` by projecting a
+random Matrix onto the tangent vector at `vector_at`.
+"""
+rand(::GeneralizedGrassmann; σ::Real=1.0)
+
+function Random.rand!(
+    rng::AbstractRNG,
+    M::GeneralizedGrassmann{n,k,ℝ},
+    pX;
+    vector_at=nothing,
+    σ::Real=one(real(eltype(pX))),
+) where {n,k}
+    if vector_at === nothing
+        A = σ * randn(rng, eltype(pX), n, k)
+        project!(M, pX, Matrix(qr(A).Q))
+    else
+        Z = σ * randn(rng, eltype(pX), size(pX))
+        project!(M, pX, vector_at, Z)
+        normalize!(pX)
+    end
+    return pX
 end
 
 @doc raw"""
@@ -345,12 +364,14 @@ Compute the SVD-based retraction [`PolarRetraction`](https://juliamanifolds.gith
 """
 retract(::GeneralizedGrassmann, ::Any, ::Any, ::PolarRetraction)
 
-function retract_polar!(M::GeneralizedGrassmann, q, p, X)
-    project!(M, q, p + X)
+function retract_polar!(M::GeneralizedGrassmann, q, p, X, t::Number)
+    q .= p .+ t .* X
+    project!(M, q, q)
     return q
 end
-function retract_project!(M::GeneralizedGrassmann, q, p, X)
-    project!(M, q, p + X)
+function retract_project!(M::GeneralizedGrassmann, q, p, X, t::Number)
+    q .= p .+ t .* X
+    project!(M, q, q)
     return q
 end
 

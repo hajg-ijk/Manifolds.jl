@@ -237,6 +237,9 @@ function embed!(M::Hyperbolic, Y, p::HyperboloidPoint, X::HyperboloidTVector)
     return embed!(M, Y, p.value, X.value)
 end
 
+function exp!(M::Hyperbolic, q, p, X, t::Number)
+    return exp!(M, q, p, t * X)
+end
 function exp!(M::Hyperbolic, q, p, X)
     vn = sqrt(max(inner(M, p, X, X), 0.0))
     vn < eps(eltype(p)) && return copyto!(q, p)
@@ -401,17 +404,6 @@ function project!(::Hyperbolic, Y::HyperboloidTVector, p::HyperboloidPoint, X)
     return (Y.value .= X .+ minkowski_metric(p.value, X) .* p.value)
 end
 
-function Random.rand!(M::Hyperbolic{N}, pX; vector_at=nothing, σ=one(eltype(pX))) where {N}
-    if vector_at === nothing
-        a = σ .* randn(N)
-        pX[1:(end - 1)] .= a
-        pX[end] = sqrt(1 + dot(a, a))
-    else
-        Y = σ * randn(eltype(vector_at), size(vector_at))
-        project!(M, pX, vector_at, Y)
-    end
-    return pX
-end
 function Random.rand!(
     rng::AbstractRNG,
     M::Hyperbolic{N},
@@ -420,9 +412,10 @@ function Random.rand!(
     σ=one(eltype(pX)),
 ) where {N}
     if vector_at === nothing
-        a = σ .* randn(rng, N)
-        pX[1:(end - 1)] .= a
-        pX[end] = sqrt(1 + dot(a, a))
+        a = randn(rng, N)
+        f = 1 + σ * abs(randn(rng))
+        pX[firstindex(pX):(end - 1)] .= a .* sqrt(f^2 - 1) / norm(a)
+        pX[end] = f
     else
         Y = σ * randn(rng, eltype(vector_at), size(vector_at))
         project!(M, pX, vector_at, Y)

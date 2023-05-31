@@ -37,7 +37,7 @@ end
 function check_point(M::Circle{ℂ}, p; kwargs...)
     if !isapprox(sum(abs.(p)), 1.0; kwargs...)
         return DomainError(
-            abs(p),
+            sum(abs.(p)),
             "The point $(p) does not lie on the $(M) since its norm is not 1.",
         )
     end
@@ -45,7 +45,7 @@ function check_point(M::Circle{ℂ}, p; kwargs...)
 end
 check_size(::Circle, ::Number) = nothing
 function check_size(M::Circle, p)
-    (size(p) == ()) && return nothing
+    (size(p) === () || size(p) === (1,)) && return nothing
     return DomainError(
         size(p),
         "The point $p can not belong to the $M, since it is not a number nor a vector of size (1,).",
@@ -53,7 +53,7 @@ function check_size(M::Circle, p)
 end
 check_size(::Circle, ::Number, ::Number) = nothing
 function check_size(M::Circle, p, X)
-    (size(X) == ()) && return nothing
+    (size(X) === () || size(p) === (1,)) && return nothing
     return DomainError(
         size(X),
         "The vector $X is not a tangent vector to $p on $M, since it is not a number nor a vector of size (1,).",
@@ -103,7 +103,14 @@ complex-valued case.
 distance(::Circle, ::Any...)
 distance(::Circle{ℝ}, p::Real, q::Real) = abs(sym_rem(p - q))
 distance(::Circle{ℝ}, p, q) = abs(sum(sym_rem.(p - q)))
-distance(::Circle{ℂ}, p, q) = acos(clamp(complex_dot(p, q), -1, 1))
+function distance(::Circle{ℂ}, p, q)
+    cosθ = complex_dot(p, q)
+    T = float(real(Base.promote_eltype(p, q)))
+    # abs and relative error of acos is less than sqrt(eps(T))
+    -1 < cosθ < 1 - sqrt(eps(T)) / 8 && return acos(cosθ)
+    # improved accuracy for q close to p or -p
+    return 2 * abs(atan(norm(p - q), norm(p + q)))
+end
 
 @doc raw"""
     embed(M::Circle, p)
@@ -132,15 +139,26 @@ complex plane.
 """
 exp(::Circle, ::Any...)
 Base.exp(::Circle{ℝ}, p::Real, X::Real) = sym_rem(p + X)
+Base.exp(::Circle{ℝ}, p::Real, X::Real, t::Real) = sym_rem(p + t * X)
 function Base.exp(M::Circle{ℂ}, p::Number, X::Number)
     θ = norm(M, p, X)
     return cos(θ) * p + usinc(θ) * X
 end
+function Base.exp(M::Circle{ℂ}, p::Number, X::Number, t::Number)
+    θ = abs(t) * norm(M, p, X)
+    return cos(θ) * p + usinc(θ) * t * X
+end
 
 exp!(::Circle{ℝ}, q, p, X) = (q .= sym_rem(p + X))
+exp!(::Circle{ℝ}, q, p, X, t::Number) = (q .= sym_rem(p + t * X))
 function exp!(M::Circle{ℂ}, q, p, X)
     θ = norm(M, p, X)
     q .= cos(θ) * p + usinc(θ) * X
+    return q
+end
+function exp!(M::Circle{ℂ}, q, p, X, t::Number)
+    θ = abs(t) * norm(M, p, X)
+    q .= cos(θ) * p + usinc(θ) * t * X
     return q
 end
 
@@ -238,8 +256,8 @@ inner(::Circle, ::Any...)
 @inline inner(::Circle{ℂ}, p, X, Y) = complex_dot(X, Y)
 
 # these methods make sure that we allow for checking mixed bare number and number wrapped in array
-Base.isapprox(::Circle, x, y; kwargs...) = isapprox(x[], y[]; kwargs...)
-Base.isapprox(::Circle, p, X, Y; kwargs...) = isapprox(X[], Y[]; kwargs...)
+_isapprox(::Circle, x, y; kwargs...) = isapprox(x[], y[]; kwargs...)
+_isapprox(::Circle, p, X, Y; kwargs...) = isapprox(X[], Y[]; kwargs...)
 
 """
     is_flat(::Circle)
@@ -402,16 +420,11 @@ If `vector_at` is `nothing`, return a random point on the [`Circle`](@ref) ``\ma
 by picking a random element from ``[-\pi,\pi)`` uniformly.
 
 If `vector_at` is not `nothing`, return a random tangent vector from the tangent space of
-the point `vector_at` on the [`Circle``](@ref) by using a normal distribution with
+the point `vector_at` on the [`Circle`](@ref) by using a normal distribution with
 mean 0 and standard deviation `σ`.
 """
-function Random.rand(::Circle{ℝ}; vector_at=nothing, σ::Real=1.0)
-    if vector_at === nothing
-        return sym_rem(rand() * 2 * π)
-    else
-        # written like that to properly handle `vector_at` being a number or a one-element array
-        return map(_ -> σ * randn(), vector_at)
-    end
+function Random.rand(M::Circle; vector_at=nothing, σ::Real=1.0)
+    return rand(Random.default_rng(), M; vector_at=vector_at, σ=σ)
 end
 function Random.rand(rng::AbstractRNG, ::Circle{ℝ}; vector_at=nothing, σ::Real=1.0)
     if vector_at === nothing
@@ -420,11 +433,15 @@ function Random.rand(rng::AbstractRNG, ::Circle{ℝ}; vector_at=nothing, σ::Rea
         return map(_ -> σ * randn(rng), vector_at)
     end
 end
-
-function Random.rand!(M::Circle{ℝ}, pX; vector_at=nothing, σ::Real=one(eltype(pX)))
-    pX .= rand(M; vector_at, σ)
-    return pX
+function Random.rand(rng::AbstractRNG, M::Circle{ℂ}; vector_at=nothing, σ::Real=1.0)
+    if vector_at === nothing
+        return sign(randn(rng, ComplexF64))
+    else
+        # written like that to properly handle `vector_at` being a number or a one-element array
+        return map(p -> project(M, p, σ * rand(rng, typeof(p))), vector_at)
+    end
 end
+
 function Random.rand!(
     rng::AbstractRNG,
     M::Circle{ℝ},
